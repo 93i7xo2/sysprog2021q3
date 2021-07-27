@@ -3,9 +3,9 @@ obj-m += $(MODULENAME).o
 $(MODULENAME)-y += main.o
 
 KERNELDIR ?= /lib/modules/`uname -r`/build
-PWD       := $(shell pwd)
+PWD := $(shell pwd)
 
 all:
-        $(MAKE) -C $(KERNELDIR) M=$(PWD) modules
+	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
 clean:
-        $(MAKE) -C $(KERNELDIR) M=$(PWD) clean
+	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean

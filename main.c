@@ -195,6 +195,7 @@ static ssize_t device_write(struct file *filep,
     return len;
 }
 
+static dev_t dev;
 static struct cdev cdev;
 static struct class *hideproc_class = NULL;
 
@@ -209,30 +210,46 @@ static const struct file_operations fops = {
 #define MINOR_VERSION 1
 #define DEVICE_NAME "hideproc"
 
-static int _hideproc_init(void)
-{
-    int err, dev_major;
-    dev_t dev;
-    printk(KERN_INFO "@ %s\n", __func__);
-    err = alloc_chrdev_region(&dev, 0, MINOR_VERSION, DEVICE_NAME);
-    dev_major = MAJOR(dev);
+static int _hideproc_init(void) {
+  int dev_major;
+  printk(KERN_INFO "@ %s\n", __func__);
+  if (alloc_chrdev_region(&dev, 0, MINOR_VERSION, DEVICE_NAME) < 0) {
+    return -1;
+  }
+  dev_major = MAJOR(dev);
 
-    hideproc_class = class_create(THIS_MODULE, DEVICE_NAME);
+  cdev_init(&cdev, &fops);
+  if (cdev_add(&cdev, MKDEV(dev_major, MINOR_VERSION), 1) == -1) {
+    unregister_chrdev_region(dev, 1);
+    return -1;
+  }
 
-    cdev_init(&cdev, &fops);
-    cdev_add(&cdev, MKDEV(dev_major, MINOR_VERSION), 1);
-    device_create(hideproc_class, NULL, MKDEV(dev_major, MINOR_VERSION), NULL,
-                  DEVICE_NAME);
+  if (IS_ERR(hideproc_class = class_create(THIS_MODULE, DEVICE_NAME))) {
+    cdev_del(&cdev);
+    unregister_chrdev_region(dev, 1);
+    return -1;
+  }
 
-    init_hook();
+  if (IS_ERR(device_create(hideproc_class, NULL,
+                           MKDEV(dev_major, MINOR_VERSION), NULL,
+                           DEVICE_NAME))) {
+    class_destroy(hideproc_class);
+    cdev_del(&cdev);
+    unregister_chrdev_region(dev, 1);
+    return -1;
+  }
 
-    return 0;
+  init_hook();
+
+  return 0;
 }
 
-static void _hideproc_exit(void)
-{
-    printk(KERN_INFO "@ %s\n", __func__);
-    /* FIXME: ensure the release of all allocated resources */
+static void _hideproc_exit(void) {
+  device_destroy(hideproc_class, MKDEV(MAJOR(dev), MINOR_VERSION));
+  class_destroy(hideproc_class);
+  cdev_del(&cdev);
+  unregister_chrdev_region(dev, 1);
+  printk(KERN_INFO "@ %s\n", __func__);
 }
 
 module_init(_hideproc_init);
