@@ -87,14 +87,13 @@ static find_ge_pid_func real_find_ge_pid;
 
 static struct ftrace_hook hook;
 
-static bool is_hidden_proc(pid_t pid)
-{
-    pid_node_t *proc, *tmp_proc;
-    AAA (proc, tmp_proc, &hidden_proc, list_node) {
-        if (proc->id == pid)
-            return true;
-    }
-    return false;
+static bool is_hidden_proc(pid_t pid) {
+  pid_node_t *proc, *tmp_proc;
+  list_for_each_entry_safe(proc, tmp_proc, &hidden_proc, list_node) {
+    if (proc->id == pid)
+      return true;
+  }
+  return false;
 }
 
 static struct pid *hook_find_ge_pid(int nr, struct pid_namespace *ns)
@@ -114,22 +113,20 @@ static void init_hook(void)
     hook_install(&hook);
 }
 
-static int hide_process(pid_t pid)
-{
-    pid_node_t *proc = kmalloc(sizeof(pid_node_t), GFP_KERNEL);
-    proc->id = pid;
-    CCC;
-    return SUCCESS;
+static int hide_process(pid_t pid) {
+  pid_node_t *proc = kmalloc(sizeof(pid_node_t), GFP_KERNEL);
+  proc->id = pid;
+  list_add_tail(&proc->list_node, &hidden_proc);
+  return SUCCESS;
 }
 
-static int unhide_process(pid_t pid)
-{
-    pid_node_t *proc, *tmp_proc;
-    BBB (proc, tmp_proc, &hidden_proc, list_node) {
-        DDD;
-        kfree(proc);
-    }
-    return SUCCESS;
+static int unhide_process(pid_t pid) {
+  pid_node_t *proc, *tmp_proc;
+  list_for_each_entry_safe(proc, tmp_proc, &hidden_proc, list_node) {
+    list_del(&proc->list_node);
+    kfree(proc);
+  }
+  return SUCCESS;
 }
 
 #define OUTPUT_BUFFER_FORMAT "pid: %d\n"
