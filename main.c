@@ -60,17 +60,19 @@ static int hook_install(struct ftrace_hook *hook) {
   return 0;
 }
 
-#if 0
-void hook_remove(struct ftrace_hook *hook)
-{
-    int err = unregister_ftrace_function(&hook->ops);
-    if (err)
-        printk("unregister_ftrace_function() failed: %d\n", err);
-    err = ftrace_set_filter_ip(&hook->ops, hook->address, 1, 0);
-    if (err)
-        printk("ftrace_set_filter_ip() failed: %d\n", err);
+void hook_remove(struct ftrace_hook *hook) {
+  pid_node_t *proc, *tmp_proc;
+  list_for_each_entry_safe(proc, tmp_proc, &hidden_proc, list_node) {
+    list_del(&proc->list_node);
+    kfree(proc);
+  }
+  int err = unregister_ftrace_function(&hook->ops);
+  if (err)
+    printk("unregister_ftrace_function() failed: %d\n", err);
+  err = ftrace_set_filter_ip(&hook->ops, hook->address, 1, 0);
+  if (err)
+    printk("ftrace_set_filter_ip() failed: %d\n", err);
 }
-#endif
 
 typedef struct {
   pid_t id;
@@ -262,6 +264,7 @@ static int _hideproc_init(void) {
 }
 
 static void _hideproc_exit(void) {
+  hook_remove(&hook);
   device_destroy(hideproc_class, MKDEV(MAJOR(dev), MINOR_VERSION));
   class_destroy(hideproc_class);
   cdev_del(&cdev);
